@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  dokploy-dns-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dokploy-dns-manager
+    restart: unless-stopped
+    
+    # Environment variables - MODIFY THESE VALUES
+    environment:
+      # Simply.com API credentials (REQUIRED)
+      - SIMPLY_ACCOUNT_NAME=your_account_name  # Your Simply.com account name (e.g., S123456)
+      - SIMPLY_API_KEY=your_api_key           # Your Simply.com API key
+      
+      # DNS configuration
+      - TARGET_DOMAIN=your-server.com         # Target domain for CNAME records (where your server is)
+      
+      # Timing configuration (optional)
+      - POLL_INTERVAL_SECONDS=30              # How often to check containers (default: 30s)
+      - DELETE_DELAY_SECONDS=300              # Delay before deleting DNS records (default: 5 minutes)
+      
+      # Server configuration (optional)
+      - PORT=3000                             # Port for web interface (default: 3000)
+      - NODE_ENV=production
+    
+    # Volume mounts
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Required: Docker socket access
+      - ./logs:/app/logs                               # Optional: Persistent logs
+    
+    # Network configuration
+    ports:
+      - "3000:3000"  # Web interface and API
+    
+    # Traefik labels for integration with Dokploy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dns-manager.rule=Host(`dns-manager.your-domain.com`)"
+      - "traefik.http.routers.dns-manager.entrypoints=websecure"
+      - "traefik.http.routers.dns-manager.tls.certresolver=letsencrypt"
+      - "traefik.http.services.dns-manager.loadbalancer.server.port=3000"
+    
+    # Resource limits for efficiency
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const options = { hostname: 'localhost', port: 3000, path: '/api/health', timeout: 2000 }; const req = http.request(options, (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.end();"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Security
+    security_opt:
+      - no-new-privileges:true
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Optional: Create a dedicated network
+networks:
+  default:
+    name: dokploy-dns-manager
+    driver: bridge
